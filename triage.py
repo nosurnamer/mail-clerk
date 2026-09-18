@@ -8,21 +8,30 @@ Founder inbox triage pipeline.
 Claude proposes decisions. This script enforces the hard constraints
 mechanically and never sends, books, pays, or changes payment details itself.
 
-Usage:
-    python3 triage.py run [--brief founder-brief.md] [--inbox inbox.csv] [--out output/]
-    python3 triage.py validate [--out output/] [--inbox inbox.csv]
+No Anthropic API key or billing is required. `run` drives Claude through the
+locally installed Claude Code CLI (`claude -p`), which uses whatever account
+you're logged into `claude` with - a Claude Pro or Max subscription is
+enough. If you'd rather use claude.ai in a browser, use `prepare` + `ingest`
+instead. See HOW-TO-USE-ON-YOUR-MAILBOX.md for the full walkthrough.
 
-`run` calls the Claude API (requires ANTHROPIC_API_KEY and the `anthropic`
-package: `pip install anthropic`) to generate the four output files, then
-immediately runs the same validation as `validate`. `validate` can be run on
-its own against any already-generated output/ directory, with no API access,
-which is what CI or a human reviewer should do before anything in output/ is
-acted on.
+Usage:
+    python3 triage.py run       [--brief founder-brief.md] [--inbox inbox.csv] [--out output/]
+    python3 triage.py prepare   [--brief founder-brief.md] [--inbox inbox.csv] [--to claude_prompt.txt]
+    python3 triage.py ingest    <path-to-pasted-claude-response> [--out output/] [--inbox inbox.csv]
+    python3 triage.py validate  [--out output/] [--inbox inbox.csv]
+
+`run` calls Claude (via the local `claude` CLI by default) to generate the
+four output files, then immediately runs the same validation as `validate`.
+`validate` can be run on its own against any already-generated output/
+directory, with no Claude access at all, which is what CI or a human
+reviewer should do before anything in output/ is acted on.
 """
 import argparse
 import csv
 import json
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,6 +48,13 @@ CLASSIFICATION_COLUMNS = [
 REQUIRED_OUTPUT_FILES = [
     "classifications.csv", "founder-brief.md", "drafts.md", "corrections.md",
 ]
+
+RESPONSE_INSTRUCTIONS = (
+    "\n\nRespond with ONLY a JSON object with these exact keys, no other "
+    "text before or after it: \"classifications_csv\" (a string, the full "
+    "CSV content including header), \"founder_brief_md\" (string), "
+    "\"drafts_md\" (string), \"corrections_md\" (string)."
+)
 
 # Phrases that would mean the system is describing an action as already taken,
 # rather than recommending one for a human to take. This is a best-effort
@@ -74,62 +90,105 @@ def build_prompt(brief_text: str, inbox_rows: list, prompt_text: str) -> str:
     )
 
 
-def call_claude(prompt: str, model: str = "claude-sonnet-5") -> str:
-    try:
-        import anthropic
-    except ImportError as e:
+def call_claude_cli(prompt: str, model: str | None = None) -> str:
+    """Runs the prompt through the local Claude Code CLI in headless mode.
+
+    Uses whatever `claude` is already logged into on this machine - a
+    Claude Pro or Max subscription login is enough, no API key or
+    per-token billing required.
+    """
+    if shutil.which("claude") is None:
         raise SystemExit(
-            "The 'anthropic' package is required for `triage.py run`.\n"
-            "Install it with: pip install anthropic\n"
-            "Then set ANTHROPIC_API_KEY and re-run."
-        ) from e
+            "Could not find the `claude` command on PATH.\n\n"
+            "Install Claude Code and log in with your Claude account:\n"
+            "  npm install -g @anthropic-ai/claude-code\n"
+            "  claude login\n\n"
+            "Or skip the CLI entirely and use the manual copy/paste flow:\n"
+            "  python3 triage.py prepare\n"
+            "See HOW-TO-USE-ON-YOUR-MAILBOX.md for the full walkthrough."
+        )
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return "".join(block.text for block in response.content if block.type == "text")
+    cmd = ["claude", "-p", "--output-format", "text"]
+    if model:
+        cmd += ["--model", model]
+
+    result = subprocess.run(cmd, input=prompt, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise SystemExit(
+            f"`claude` exited with code {result.returncode}:\n{result.stderr}\n\n"
+            "If this looks like a login/auth problem, run `claude login` "
+            "(a Claude Pro or Max subscription is enough) and try again."
+        )
+    return result.stdout
 
 
-def run(args):
-    brief_path = Path(args.brief)
-    inbox_path = Path(args.inbox)
-    prompt_path = Path(args.prompt)
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    brief_text = brief_path.read_text(encoding="utf-8")
-    prompt_text = prompt_path.read_text(encoding="utf-8")
-    inbox_rows = read_inbox(inbox_path)
-
-    n = len(inbox_rows)
-    print(f"Loaded {n} emails from {inbox_path}.")
-
-    full_prompt = build_prompt(brief_text, inbox_rows, prompt_text) + (
-        "\n\nRespond with ONLY a JSON object with these exact keys, no other "
-        "text: \"classifications_csv\" (a string, the full CSV content "
-        "including header), \"founder_brief_md\" (string), \"drafts_md\" "
-        "(string), \"corrections_md\" (string)."
-    )
-
-    print("Calling Claude to generate classifications, brief, drafts, and corrections...")
-    raw = call_claude(full_prompt, model=args.model)
-
+def parse_claude_payload(raw: str) -> dict:
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
     try:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        payload = json.loads(match.group(0) if match else raw)
+        return json.loads(match.group(0) if match else raw)
     except (json.JSONDecodeError, AttributeError) as e:
-        raise SystemExit(f"Could not parse Claude's response as JSON: {e}\n\nRaw response:\n{raw}")
+        raise SystemExit(
+            f"Could not parse Claude's response as JSON: {e}\n\nRaw response:\n{raw}"
+        )
 
+
+def write_payload(payload: dict, out_dir: Path):
+    out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "classifications.csv").write_text(payload["classifications_csv"], encoding="utf-8")
     (out_dir / "founder-brief.md").write_text(payload["founder_brief_md"], encoding="utf-8")
     (out_dir / "drafts.md").write_text(payload["drafts_md"], encoding="utf-8")
     (out_dir / "corrections.md").write_text(payload["corrections_md"], encoding="utf-8")
     print(f"Wrote outputs to {out_dir}/")
 
+
+def _full_prompt(args) -> tuple[str, Path]:
+    brief_text = Path(args.brief).read_text(encoding="utf-8")
+    prompt_text = Path(args.prompt).read_text(encoding="utf-8")
+    inbox_path = Path(args.inbox)
+    inbox_rows = read_inbox(inbox_path)
+    print(f"Loaded {len(inbox_rows)} emails from {inbox_path}.")
+    return build_prompt(brief_text, inbox_rows, prompt_text) + RESPONSE_INSTRUCTIONS, inbox_path
+
+
+def run(args):
+    full_prompt, inbox_path = _full_prompt(args)
+    out_dir = Path(args.out)
+
+    print("Calling Claude (via the local `claude` CLI) to generate classifications, brief, drafts, and corrections...")
+    raw = call_claude_cli(full_prompt, model=args.model)
+    payload = parse_claude_payload(raw)
+    write_payload(payload, out_dir)
+
     ok = validate(argparse.Namespace(out=str(out_dir), inbox=str(inbox_path)))
+    if not ok:
+        sys.exit(1)
+
+
+def prepare(args):
+    """Writes a single self-contained prompt file to paste into claude.ai
+    (web or app) when the `claude` CLI isn't available locally."""
+    full_prompt, _ = _full_prompt(args)
+    dest = Path(args.to)
+    dest.write_text(full_prompt, encoding="utf-8")
+    print(f"Wrote the full prompt to {dest}.")
+    print(
+        "\nNext steps:\n"
+        f"  1. Open {dest} and copy its entire contents.\n"
+        "  2. Paste it into a new chat at https://claude.ai (any Pro/Max/Team plan works).\n"
+        "  3. Copy Claude's full reply and save it to a file, e.g. claude_response.txt.\n"
+        "  4. Run: python3 triage.py ingest claude_response.txt\n"
+    )
+
+
+def ingest(args):
+    """Takes a saved Claude response (pasted from claude.ai) and writes it
+    into output/, then validates it."""
+    raw = Path(args.response_file).read_text(encoding="utf-8")
+    payload = parse_claude_payload(raw)
+    out_dir = Path(args.out)
+    write_payload(payload, out_dir)
+
+    ok = validate(argparse.Namespace(out=str(out_dir), inbox=args.inbox))
     if not ok:
         sys.exit(1)
 
@@ -240,13 +299,26 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_run = sub.add_parser("run", help="Call Claude to generate outputs, then validate them.")
+    p_run = sub.add_parser("run", help="Drive Claude Code (local `claude` CLI) to generate outputs, then validate them.")
     p_run.add_argument("--brief", default="founder-brief.md")
     p_run.add_argument("--inbox", default="inbox.csv")
     p_run.add_argument("--prompt", default="prompt.md")
     p_run.add_argument("--out", default="output")
-    p_run.add_argument("--model", default="claude-sonnet-5")
+    p_run.add_argument("--model", default=None, help="Optional model override, e.g. claude-sonnet-5. Defaults to your `claude` CLI's own default.")
     p_run.set_defaults(func=run)
+
+    p_prep = sub.add_parser("prepare", help="Write a single prompt file to paste into claude.ai manually.")
+    p_prep.add_argument("--brief", default="founder-brief.md")
+    p_prep.add_argument("--inbox", default="inbox.csv")
+    p_prep.add_argument("--prompt", default="prompt.md")
+    p_prep.add_argument("--to", default="claude_prompt.txt")
+    p_prep.set_defaults(func=prepare)
+
+    p_ing = sub.add_parser("ingest", help="Turn a saved claude.ai reply into output/, then validate it.")
+    p_ing.add_argument("response_file")
+    p_ing.add_argument("--out", default="output")
+    p_ing.add_argument("--inbox", default="inbox.csv")
+    p_ing.set_defaults(func=ingest)
 
     p_val = sub.add_parser("validate", help="Run deterministic checks against an existing output/ dir.")
     p_val.add_argument("--out", default="output")
