@@ -98,7 +98,7 @@ When an email proposes or implies a meeting:
 1. **classifications.csv** - one row per email: `email_id, sender, subject,
    primary_classification, flags, owner, urgency, deadline, reason,
    recommended_action`. Exactly one row per input email, no more, no fewer.
-2. **founder-brief.md** (output) - the brief the founder actually reads:
+2. **inbox-brief.md** (output) - the brief the founder actually reads:
    "Needs You Now" (grouped by decision, not by email), "Important, Not
    Urgent", "BA / Team Can Handle" (short bullets), "Inbox Cleared" (counts).
    Do not summarize all 50 emails - prioritize decisions, deadlines, risk,

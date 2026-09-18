@@ -34,8 +34,9 @@ Given a founder's operating rules and a CSV of inbox messages, it produces:
    `SAM_NOW`, `SAM_LATER`, `DRAFT_READY`, `DELEGATE`, `NO_ACTION`, with
    flags, owner, urgency, deadline, reason, and a recommended (not taken)
    action.
-2. `output/founder-brief.md` - the concise brief the founder actually reads,
-   organized by decision rather than by email.
+2. `output/inbox-brief.md` - the concise brief the founder actually reads,
+   organized by decision rather than by email. (Named differently from the
+   input `founder-brief.md` on purpose, so the two are never confused.)
 3. `output/drafts.md` - four draft replies: two the BA is authorized to send
    as-is, two clearly marked as requiring the founder's sign-off.
 4. `output/corrections.md` - two worked examples of where a naive classifier
@@ -44,26 +45,39 @@ Given a founder's operating rules and a CSV of inbox messages, it produces:
 
 ## How to run it
 
-This run's outputs are already committed under `output/` for the sample
-inbox in `inbox.csv`. To validate them (no API access needed):
+**No Anthropic API key or billing required.** This run's outputs are already
+committed under `output/` for the sample inbox in `inbox.csv`. To validate
+them on their own:
 
 ```bash
 python3 triage.py validate
 ```
 
-To regenerate them (or run against a new inbox) using the Claude API:
+To regenerate them (or run against a new inbox), you only need a Claude Pro,
+Max, or Team subscription:
 
 ```bash
-pip install anthropic
-export ANTHROPIC_API_KEY=sk-...
-python3 triage.py run --brief founder-brief.md --inbox inbox.csv --out output
+python3 triage.py run
 ```
 
-`run` calls Claude with `founder-brief.md`, `inbox.csv`, and the instructions
-in `prompt.md`, writes the four output files, and then immediately runs the
-same deterministic checks as `validate` - if validation fails, it exits
-non-zero and prints exactly what's wrong instead of silently producing an
-output that looks fine.
+`run` drives Claude through the local Claude Code CLI (`claude -p`), using
+whatever account you're already logged into `claude` with - your
+subscription login, not per-token API billing. It writes the four output
+files and then immediately runs the same deterministic checks as `validate`
+- if validation fails, it exits non-zero and prints exactly what's wrong
+instead of silently producing an output that looks fine.
+
+No Claude Code CLI installed? Use the copy/paste path instead:
+
+```bash
+python3 triage.py prepare              # writes claude_prompt.txt
+# paste claude_prompt.txt into a claude.ai chat, save the reply as claude_response.txt
+python3 triage.py ingest claude_response.txt
+```
+
+**See [`HOW-TO-USE-ON-YOUR-MAILBOX.md`](HOW-TO-USE-ON-YOUR-MAILBOX.md) for
+the full step-by-step walkthrough**, including how to swap in your own
+founder brief and inbox.
 
 ## Input format
 
@@ -78,7 +92,7 @@ output that looks fine.
 
 ## Outputs
 
-See `output/classifications.csv`, `output/founder-brief.md`,
+See `output/classifications.csv`, `output/inbox-brief.md`,
 `output/drafts.md`, and `output/corrections.md` for this run's results
 against the sample inbox (50 emails, week of 09/14/2026).
 
