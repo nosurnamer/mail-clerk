@@ -46,13 +46,13 @@ CLASSIFICATION_COLUMNS = [
     "owner", "urgency", "deadline", "reason", "recommended_action",
 ]
 REQUIRED_OUTPUT_FILES = [
-    "classifications.csv", "founder-brief.md", "drafts.md", "corrections.md",
+    "classifications.csv", "inbox-brief.md", "drafts.md", "corrections.md",
 ]
 
 RESPONSE_INSTRUCTIONS = (
     "\n\nRespond with ONLY a JSON object with these exact keys, no other "
     "text before or after it: \"classifications_csv\" (a string, the full "
-    "CSV content including header), \"founder_brief_md\" (string), "
+    "CSV content including header), \"inbox_brief_md\" (string), "
     "\"drafts_md\" (string), \"corrections_md\" (string)."
 )
 
@@ -135,7 +135,7 @@ def parse_claude_payload(raw: str) -> dict:
 def write_payload(payload: dict, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "classifications.csv").write_text(payload["classifications_csv"], encoding="utf-8")
-    (out_dir / "founder-brief.md").write_text(payload["founder_brief_md"], encoding="utf-8")
+    (out_dir / "inbox-brief.md").write_text(payload["inbox_brief_md"], encoding="utf-8")
     (out_dir / "drafts.md").write_text(payload["drafts_md"], encoding="utf-8")
     (out_dir / "corrections.md").write_text(payload["corrections_md"], encoding="utf-8")
     print(f"Wrote outputs to {out_dir}/")
@@ -271,7 +271,7 @@ def validate(args) -> bool:
                 )
 
     # 5. No output file describes an action as already taken (send/book/pay).
-    for name in ["founder-brief.md", "drafts.md", "corrections.md"]:
+    for name in ["inbox-brief.md", "drafts.md", "corrections.md"]:
         text = (out_dir / name).read_text(encoding="utf-8")
         for pattern in PROHIBITED_DONE_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):

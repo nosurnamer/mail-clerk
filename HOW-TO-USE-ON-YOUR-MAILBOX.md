@@ -74,7 +74,7 @@ This will:
 
 1. Read `founder-brief.md` and `inbox.csv`
 2. Hand them to Claude (through the `claude` CLI, using your existing login)
-3. Write `output/classifications.csv`, `output/founder-brief.md`,
+3. Write `output/classifications.csv`, `output/inbox-brief.md`,
    `output/drafts.md`, and `output/corrections.md`
 4. Immediately run the deterministic safety checks and tell you if anything
    looks wrong (missing rows, an invalid category, a draft that quietly
@@ -84,7 +84,7 @@ A run over ~50 emails typically takes a couple of minutes.
 
 ### 3. Review the output
 
-Open `output/founder-brief.md` first — that's the thing meant to be read at
+Open `output/inbox-brief.md` first — that's the thing meant to be read at
 a glance. Then check `output/drafts.md` before sending anything, and skim
 `output/classifications.csv` for anything that looks off.
 
@@ -133,7 +133,7 @@ try again.
 
 ### 5. Review the output
 
-Same as Path A: start with `output/founder-brief.md`, then `output/drafts.md`
+Same as Path A: start with `output/inbox-brief.md`, then `output/drafts.md`
 before sending anything.
 
 ---

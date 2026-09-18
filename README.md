@@ -34,8 +34,9 @@ Given a founder's operating rules and a CSV of inbox messages, it produces:
    `SAM_NOW`, `SAM_LATER`, `DRAFT_READY`, `DELEGATE`, `NO_ACTION`, with
    flags, owner, urgency, deadline, reason, and a recommended (not taken)
    action.
-2. `output/founder-brief.md` - the concise brief the founder actually reads,
-   organized by decision rather than by email.
+2. `output/inbox-brief.md` - the concise brief the founder actually reads,
+   organized by decision rather than by email. (Named differently from the
+   input `founder-brief.md` on purpose, so the two are never confused.)
 3. `output/drafts.md` - four draft replies: two the BA is authorized to send
    as-is, two clearly marked as requiring the founder's sign-off.
 4. `output/corrections.md` - two worked examples of where a naive classifier
@@ -91,7 +92,7 @@ founder brief and inbox.
 
 ## Outputs
 
-See `output/classifications.csv`, `output/founder-brief.md`,
+See `output/classifications.csv`, `output/inbox-brief.md`,
 `output/drafts.md`, and `output/corrections.md` for this run's results
 against the sample inbox (50 emails, week of 09/14/2026).
 
